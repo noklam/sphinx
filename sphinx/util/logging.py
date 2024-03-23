@@ -85,6 +85,7 @@ def convert_serializable(records: list[logging.LogRecord]) -> None:
 
 class SphinxLogRecord(logging.LogRecord):
     """Log record class supporting location"""
+
     prefix = ''
     location: Any = None
 
@@ -101,11 +102,13 @@ class SphinxLogRecord(logging.LogRecord):
 
 class SphinxInfoLogRecord(SphinxLogRecord):
     """Info log record class supporting location"""
+
     prefix = ''  # do not show any prefix for INFO messages
 
 
 class SphinxWarningLogRecord(SphinxLogRecord):
     """Warning log record class supporting location"""
+
     @property
     def prefix(self) -> str:  # type: ignore[override]
         if self.levelno >= logging.CRITICAL:
@@ -118,6 +121,7 @@ class SphinxWarningLogRecord(SphinxLogRecord):
 
 class SphinxLoggerAdapter(logging.LoggerAdapter):
     """LoggerAdapter allowing ``type`` and ``subtype`` keywords."""
+
     KEYWORDS = ['type', 'subtype', 'location', 'nonl', 'color', 'once']
 
     def log(  # type: ignore[override]
@@ -143,9 +147,56 @@ class SphinxLoggerAdapter(logging.LoggerAdapter):
     def handle(self, record: logging.LogRecord) -> None:
         self.logger.handle(record)
 
+    def warning(  # type: ignore[override]
+        self,
+        msg: object,
+        *args: object,
+        type: None | str = None,
+        subtype: None | str = None,
+        location: None | str | tuple[str | None, int | None] | Node = None,
+        nonl: bool = True,
+        color: str | None = None,
+        once: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Log a sphinx warning.
+
+        It is recommended to include a ``type`` and ``subtype`` for warnings as
+        these can be displayed to the user using :confval:`show_warning_types`
+        and used in :confval:`suppress_warnings` to suppress specific warnings.
+
+        It is also recommended to specify a ``location`` whenever possible
+        to help users in correcting the warning.
+
+        :param msg: The message, which may contain placeholders for ``args``.
+        :param args: The arguments to substitute into ``msg``.
+        :param type: The type of the warning.
+        :param subtype: The subtype of the warning.
+        :param location: The source location of the warning's origin,
+            which can be a string (the ``docname`` or ``docname:lineno``),
+            a tuple of ``(docname, lineno)``,
+            or the docutils node object.
+        :param nonl: Whether to append a new line terminator to the message.
+        :param color: A color code for the message.
+        :param once: Do not log this warning,
+            if a previous warning already has same ``msg``, ``args`` and ``once=True``.
+        """
+        return super().warning(
+            msg,
+            *args,
+            type=type,
+            subtype=subtype,
+            location=location,
+            nonl=nonl,
+            color=color,
+            once=once,
+            **kwargs,
+        )
+
 
 class WarningStreamHandler(logging.StreamHandler):
     """StreamHandler for warnings."""
+
     pass
 
 
@@ -475,7 +526,9 @@ class SphinxLogRecordTranslator(logging.Filter):
 
     * Make a instance of SphinxLogRecord
     * docname to path if location given
+    * append warning type/subtype to message if :confval:`show_warning_types` is ``True``
     """
+
     LogRecordClass: type[logging.LogRecord]
 
     def __init__(self, app: Sphinx) -> None:
@@ -507,12 +560,31 @@ class SphinxLogRecordTranslator(logging.Filter):
 
 class InfoLogRecordTranslator(SphinxLogRecordTranslator):
     """LogRecordTranslator for INFO level log records."""
+
     LogRecordClass = SphinxInfoLogRecord
 
 
 class WarningLogRecordTranslator(SphinxLogRecordTranslator):
     """LogRecordTranslator for WARNING level log records."""
+
     LogRecordClass = SphinxWarningLogRecord
+
+    def filter(self, record: SphinxWarningLogRecord) -> bool:  # type: ignore[override]
+        ret = super().filter(record)
+
+        try:
+            show_warning_types = self.app.config.show_warning_types
+        except AttributeError:
+            # config is not initialized yet (ex. in conf.py)
+            show_warning_types = False
+        if show_warning_types:
+            if log_type := getattr(record, 'type', ''):
+                if log_subtype := getattr(record, 'subtype', ''):
+                    record.msg += f' [{log_type}.{log_subtype}]'
+                else:
+                    record.msg += f' [{log_type}]'
+
+        return ret
 
 
 def get_node_location(node: Node) -> str | None:
@@ -543,6 +615,7 @@ class ColorizeFormatter(logging.Formatter):
 
 class SafeEncodingWriter:
     """Stream writer which ignores UnicodeEncodeError silently"""
+
     def __init__(self, stream: IO) -> None:
         self.stream = stream
         self.encoding = getattr(stream, 'encoding', 'ascii') or 'ascii'
@@ -562,6 +635,7 @@ class SafeEncodingWriter:
 
 class LastMessagesWriter:
     """Stream writer storing last 10 messages in memory to save trackback"""
+
     def __init__(self, app: Sphinx, stream: IO) -> None:
         self.app = app
 

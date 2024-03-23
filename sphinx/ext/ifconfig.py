@@ -16,7 +16,7 @@ namespace of the project configuration (that is, all variables from
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from docutils import nodes
 
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from docutils.nodes import Node
 
     from sphinx.application import Sphinx
-    from sphinx.util.typing import OptionSpec
+    from sphinx.util.typing import ExtensionMetadata, OptionSpec
 
 
 class ifconfig(nodes.Element):
@@ -58,7 +58,7 @@ def process_ifconfig_nodes(app: Sphinx, doctree: nodes.document, docname: str) -
     ns['builder'] = app.builder.name
     for node in list(doctree.findall(ifconfig)):
         try:
-            res = eval(node['expr'], ns)  # NoQA: PGH001
+            res = eval(node['expr'], ns)  # NoQA: S307
         except Exception as err:
             # handle exceptions in a clean fashion
             from traceback import format_exception_only
@@ -74,7 +74,7 @@ def process_ifconfig_nodes(app: Sphinx, doctree: nodes.document, docname: str) -
                 node.replace_self(node.children)
 
 
-def setup(app: Sphinx) -> dict[str, Any]:
+def setup(app: Sphinx) -> ExtensionMetadata:
     app.add_node(ifconfig)
     app.add_directive('ifconfig', IfConfig)
     app.connect('doctree-resolved', process_ifconfig_nodes)

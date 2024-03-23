@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from sphinx.application import Sphinx
     from sphinx.builders import Builder
     from sphinx.environment import BuildEnvironment
+    from sphinx.util.typing import ExtensionMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +80,7 @@ def is_supported_builder(builder: Builder) -> bool:
         return False
     if builder.name == 'singlehtml':
         return False
-    if builder.name.startswith('epub') and not builder.config.viewcode_enable_epub:
-        return False
-    return True
+    return not (builder.name.startswith('epub') and not builder.config.viewcode_enable_epub)
 
 
 def doctree_read(app: Sphinx, doctree: Node) -> None:
@@ -185,6 +184,7 @@ def env_purge_doc(app: Sphinx, env: BuildEnvironment, docname: str) -> None:
 
 class ViewcodeAnchorTransform(SphinxPostTransform):
     """Convert or remove viewcode_anchor nodes depends on builder."""
+
     default_priority = 100
 
     def run(self, **kwargs: Any) -> None:
@@ -340,11 +340,11 @@ def collect_pages(app: Sphinx) -> Generator[tuple[str, dict[str, Any], str], Non
     yield (posixpath.join(OUTPUT_DIRNAME, 'index'), context, 'page.html')
 
 
-def setup(app: Sphinx) -> dict[str, Any]:
-    app.add_config_value('viewcode_import', None, False)
-    app.add_config_value('viewcode_enable_epub', False, False)
-    app.add_config_value('viewcode_follow_imported_members', True, False)
-    app.add_config_value('viewcode_line_numbers', False, 'env', (bool,))
+def setup(app: Sphinx) -> ExtensionMetadata:
+    app.add_config_value('viewcode_import', None, '')
+    app.add_config_value('viewcode_enable_epub', False, '')
+    app.add_config_value('viewcode_follow_imported_members', True, '')
+    app.add_config_value('viewcode_line_numbers', False, 'env', bool)
     app.connect('doctree-read', doctree_read)
     app.connect('env-merge-info', env_merge_info)
     app.connect('env-purge-doc', env_purge_doc)

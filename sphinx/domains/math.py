@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from sphinx.application import Sphinx
     from sphinx.builders import Builder
     from sphinx.environment import BuildEnvironment
+    from sphinx.util.typing import ExtensionMetadata
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class MathReferenceRole(XRefRole):
 
 class MathDomain(Domain):
     """Mathematics domain."""
+
     name = 'math'
     label = 'mathematics'
 
@@ -143,7 +145,7 @@ class MathDomain(Domain):
         )
 
 
-def setup(app: Sphinx) -> dict[str, Any]:
+def setup(app: Sphinx) -> ExtensionMetadata:
     app.add_domain(MathDomain)
     app.add_role('eq', MathReferenceRole(warn_dangling=True))
 

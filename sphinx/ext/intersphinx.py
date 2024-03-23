@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from sphinx.config import Config
     from sphinx.domains import Domain
     from sphinx.environment import BuildEnvironment
-    from sphinx.util.typing import Inventory, InventoryItem, RoleFunction
+    from sphinx.util.typing import ExtensionMetadata, Inventory, InventoryItem, RoleFunction
 
     InventoryCacheEntry = tuple[Union[str, None], int, Inventory]
 
@@ -245,7 +245,7 @@ def fetch_inventory_group(
             for fail in failures:
                 logger.info(*fail)
         else:
-            issues = '\n'.join([f[0] % f[1:] for f in failures])
+            issues = '\n'.join(f[0] % f[1:] for f in failures)
             logger.warning(__("failed to reach any of the inventories "
                               "with the following issues:") + "\n" + issues)
 
@@ -334,8 +334,10 @@ def _resolve_reference_in_domain_by_target(
         if target in inventory[objtype]:
             # Case sensitive match, use it
             data = inventory[objtype][target]
-        elif objtype == 'std:term':
-            # Check for potential case insensitive matches for terms only
+        elif objtype in {'std:label', 'std:term'}:
+            # Some types require case insensitive matches:
+            # * 'term': https://github.com/sphinx-doc/sphinx/issues/9291
+            # * 'label': https://github.com/sphinx-doc/sphinx/issues/12008
             target_lower = target.lower()
             insensitive_matches = list(filter(lambda k: k.lower() == target_lower,
                                               inventory[objtype].keys()))
@@ -479,7 +481,6 @@ def resolve_reference_detect_inventory(env: BuildEnvironment,
     to form ``inv_name:newtarget``. If ``inv_name`` is a named inventory, then resolution
     is tried in that inventory with the new target.
     """
-
     # ordinary direct lookup, use data as is
     res = resolve_reference_any_inventory(env, True, node, contnode)
     if res is not None:
@@ -501,7 +502,6 @@ def resolve_reference_detect_inventory(env: BuildEnvironment,
 def missing_reference(app: Sphinx, env: BuildEnvironment, node: pending_xref,
                       contnode: TextElement) -> nodes.reference | None:
     """Attempt to resolve a missing reference via intersphinx references."""
-
     return resolve_reference_detect_inventory(env, node, contnode)
 
 
@@ -552,13 +552,17 @@ class IntersphinxRole(SphinxRole):
         return result, messages
 
     def get_inventory_and_name_suffix(self, name: str) -> tuple[str | None, str]:
+        """Extract an inventory name (if any) and ``domain+name`` suffix from a role *name*.
+        and the domain+name suffix.
+
+        The role name is expected to be of one of the following forms:
+
+        - ``external+inv:name`` -- explicit inventory and name, any domain.
+        - ``external+inv:domain:name`` -- explicit inventory, domain and name.
+        - ``external:name`` -- any inventory and domain, explicit name.
+        - ``external:domain:name`` -- any inventory, explicit domain and name.
+        """
         assert name.startswith('external'), name
-        # either we have an explicit inventory name, i.e,
-        # :external+inv:role:        or
-        # :external+inv:domain:role:
-        # or we look in all inventories, i.e.,
-        # :external:role:            or
-        # :external:domain:role:
         suffix = name[9:]
         if name[8] == '+':
             inv_name, suffix = suffix.split(':', 1)
@@ -570,34 +574,56 @@ class IntersphinxRole(SphinxRole):
             raise ValueError(msg)
 
     def get_role_name(self, name: str) -> tuple[str, str] | None:
+        """Find (if any) the corresponding ``(domain, role name)`` for *name*.
+
+        The *name* can be either a role name (e.g., ``py:function`` or ``function``)
+        given as ``domain:role`` or ``role``, or its corresponding object name
+        (in this case, ``py:func`` or ``func``) given as ``domain:objname`` or ``objname``.
+
+        If no domain is given, or the object/role name is not found for the requested domain,
+        the 'std' domain is used.
+        """
         names = name.split(':')
         if len(names) == 1:
-            # role
             default_domain = self.env.temp_data.get('default_domain')
             domain = default_domain.name if default_domain else None
-            role = names[0]
+            name = names[0]
         elif len(names) == 2:
-            # domain:role:
             domain = names[0]
-            role = names[1]
+            name = names[1]
         else:
             return None
 
-        if domain and self.is_existent_role(domain, role):
+        if domain and (role := self.get_role_name_from_domain(domain, name)):
             return (domain, role)
-        elif self.is_existent_role('std', role):
+        elif (role := self.get_role_name_from_domain('std', name)):
             return ('std', role)
         else:
             return None
 
-    def is_existent_role(self, domain_name: str, role_name: str) -> bool:
+    def is_existent_role(self, domain_name: str, role_or_obj_name: str) -> bool:
+        """Check if the given role or object exists in the given domain."""
+        return self.get_role_name_from_domain(domain_name, role_or_obj_name) is not None
+
+    def get_role_name_from_domain(self, domain_name: str, role_or_obj_name: str) -> str | None:
+        """Check if the given role or object exists in the given domain,
+        and return the related role name if it exists, otherwise return None.
+        """
         try:
             domain = self.env.get_domain(domain_name)
-            return role_name in domain.roles
         except ExtensionError:
-            return False
+            return None
+        if role_or_obj_name in domain.roles:
+            return role_or_obj_name
+        if (
+            (role_name := domain.role_for_objtype(role_or_obj_name))
+            and role_name in domain.roles
+        ):
+            return role_name
+        return None
 
     def invoke_role(self, role: tuple[str, str]) -> tuple[list[Node], list[system_message]]:
+        """Invoke the role described by a ``(domain, role name)`` pair."""
         domain = self.env.get_domain(role[0])
         if domain:
             role_func = domain.role(role[1])
@@ -681,11 +707,11 @@ def normalize_intersphinx_mapping(app: Sphinx, config: Config) -> None:
             config.intersphinx_mapping.pop(key)
 
 
-def setup(app: Sphinx) -> dict[str, Any]:
-    app.add_config_value('intersphinx_mapping', {}, True)
-    app.add_config_value('intersphinx_cache_limit', 5, False)
-    app.add_config_value('intersphinx_timeout', None, False)
-    app.add_config_value('intersphinx_disabled_reftypes', ['std:doc'], True)
+def setup(app: Sphinx) -> ExtensionMetadata:
+    app.add_config_value('intersphinx_mapping', {}, 'env')
+    app.add_config_value('intersphinx_cache_limit', 5, '')
+    app.add_config_value('intersphinx_timeout', None, '')
+    app.add_config_value('intersphinx_disabled_reftypes', ['std:doc'], 'env')
     app.connect('config-inited', normalize_intersphinx_mapping, priority=800)
     app.connect('builder-inited', load_mappings)
     app.connect('source-read', install_dispatcher)

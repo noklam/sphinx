@@ -18,14 +18,16 @@ from sphinx.util.osutil import ensuredir, os_path
 
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
+    from sphinx.util.typing import ExtensionMetadata
 
 logger = logging.getLogger(__name__)
 
 
 class ChangesBuilder(Builder):
     """
-    Write a summary with all versionadded/changed directives.
+    Write a summary with all versionadded/changed/deprecated/removed directives.
     """
+
     name = 'changes'
     epilog = __('The overview file is in %(outdir)s.')
 
@@ -42,6 +44,7 @@ class ChangesBuilder(Builder):
         'versionadded': 'added',
         'versionchanged': 'changed',
         'deprecated': 'deprecated',
+        'versionremoved': 'removed',
     }
 
     def write(self, *ignored: Any) -> None:
@@ -105,7 +108,9 @@ class ChangesBuilder(Builder):
 
         hltext = ['.. versionadded:: %s' % version,
                   '.. versionchanged:: %s' % version,
-                  '.. deprecated:: %s' % version]
+                  '.. deprecated:: %s' % version,
+                  '.. versionremoved:: %s' % version,
+                  ]
 
         def hl(no: int, line: str) -> str:
             line = '<a name="L%s"> </a>' % no + html.escape(line)
@@ -142,7 +147,7 @@ class ChangesBuilder(Builder):
 
     def hl(self, text: str, version: str) -> str:
         text = html.escape(text)
-        for directive in ('versionchanged', 'versionadded', 'deprecated'):
+        for directive in ('versionchanged', 'versionadded', 'deprecated', 'versionremoved'):
             text = text.replace(f'.. {directive}:: {version}',
                                 f'<b>.. {directive}:: {version}</b>')
         return text
@@ -151,7 +156,7 @@ class ChangesBuilder(Builder):
         pass
 
 
-def setup(app: Sphinx) -> dict[str, Any]:
+def setup(app: Sphinx) -> ExtensionMetadata:
     app.add_builder(ChangesBuilder)
 
     return {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from os import path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from docutils import nodes
 from docutils.nodes import Node, make_id
@@ -21,7 +21,7 @@ from sphinx.util.osutil import SEP, os_path, relpath
 
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
-    from sphinx.util.typing import OptionSpec
+    from sphinx.util.typing import ExtensionMetadata, OptionSpec
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,7 @@ class Code(SphinxDirective):
 
     This is compatible with docutils' :rst:dir:`code` directive.
     """
+
     optional_arguments = 1
     option_spec: OptionSpec = {
         'class': directives.class_option,
@@ -175,7 +176,7 @@ class MathDirective(SphinxDirective):
         ret.insert(0, target)
 
 
-def setup(app: Sphinx) -> dict[str, Any]:
+def setup(app: Sphinx) -> ExtensionMetadata:
     directives.register_directive('figure', Figure)
     directives.register_directive('meta', Meta)
     directives.register_directive('csv-table', CSVTable)
